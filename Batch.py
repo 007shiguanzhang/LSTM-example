@@ -10,12 +10,11 @@ class BatchGenerator(object):
         self._epochs_completed = 0
         self._index_in_epoch = 0
         self._number_examples = self._X.shape[0]
-        print(self._number_examples)
         self._shuffle = shuffle
-        if self._shuffle:
-            new_index = np.random.permutation(self._number_examples)
-            self._X = self._X[new_index]
-            self._y = self._y[new_index]
+        #if self._shuffle:
+#            new_index = np.random.permutation(self._number_examples)
+#            self._X = self._X[new_index]
+#            self._y = self._y[new_index]
 
     @property
     def X(self):
@@ -36,8 +35,10 @@ class BatchGenerator(object):
     def next_batch(self, batch_size):
         """ Return the next 'batch_size' examples from this data set."""
         start = self._index_in_epoch
+        #print(start)
         self._index_in_epoch += batch_size
         if self._index_in_epoch > self._number_examples:
+            print("over")
             # finished epoch
             self._epochs_completed += 1
             # Shuffle the data
@@ -48,6 +49,7 @@ class BatchGenerator(object):
             start = 0
             self._index_in_epoch = batch_size
             assert batch_size <= self._number_examples
-
         end = self._index_in_epoch
+        #print(end)
+        #print(type(self._X[0:1]))
         return self._X[start:end], self._y[start:end]
