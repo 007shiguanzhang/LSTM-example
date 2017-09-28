@@ -3,7 +3,9 @@ import numpy as np
 tf.set_random_seed(1)   # set random seed
 
 # 导入数据
-np.set_printoptions(threshold=np.inf) 
+np.set_printoptions(threshold=np.inf)
+
+
 class Model(object):
     def __init__(self, id2, vocab_size, class_num, data_train, data_test):
 
@@ -18,8 +20,9 @@ class Model(object):
         self.n_steps = 16                # time steps
         self.n_hidden_units = 128        # neurons in hidden layer
         self.n_classes = class_num              # MNIST classes (0-9 digits)
-
-        # id2word id2tag
+        self.y_test_pred = []
+        self.y_train_pred = []
+        
         self.id2word, self.id2tag = id2
 # x y placeholder
         x = tf.placeholder(tf.int32, [None, self.n_steps])
@@ -28,15 +31,15 @@ class Model(object):
 
 # 对 weights biases 初始值的定义
         weights = {
-    # shape (64, 128) 
+            #  shape (64, 128)
             'in': tf.Variable(tf.random_normal([self.n_inputs, self.n_hidden_units])),
-    # shape (128, class_num)
-            'out': tf.Variable(tf.random_normal([self.n_hidden_units, self.n_classes]))
+            # shape (128, class_num)
+            'out': tf.Variable(tf.random_normal([self.n_hidden_units*2, self.n_classes]))
         }
         biases = {
-    # shape (128, )
+            # shape (128, )
             'in': tf.Variable(tf.constant(0.1, shape=[self.n_hidden_units, ])),
-    # shape (class_num, )
+            # shape (class_num, )
             'out': tf.Variable(tf.constant(0.1, shape=[self.n_classes, ]))
         }
         pred = self.RNN(x, weights, biases, batch_sizes)
@@ -50,6 +53,7 @@ class Model(object):
 # 替换成下面的写法:
         print('Finished creating the lstm model.')
         init = tf.global_variables_initializer()
+
         with tf.Session() as sess:
             sess.run(init)
             step = 0
@@ -57,109 +61,69 @@ class Model(object):
             while step * self.batch_size < self.training_iters:
                 batch_xs, batch_ys = data_train.next_batch(self.batch_size)
                 batch_y = np.asarray(self.embedding_y(batch_ys))
-                sess.run([train_op], feed_dict={
+                feed_dict = {
                     x: batch_xs,
                     y: batch_y,
                     batch_sizes: self.batch_size,
-                })
+                }
+                sess.run([train_op], feed_dict=feed_dict)
+                self.y_train_pred.append(sess.run(tf.argmax(pred, 1), feed_dict=feed_dict))
                 if step % 100 == 0:
-                    print(sess.run(accuracy, feed_dict={x: batch_xs, y: batch_y, batch_sizes:self.batch_size, }))
-                    train_pred = sess.run(tf.argmax(pred, -1), feed_dict={x: batch_xs, y: batch_y,
-                                                                          batch_sizes: self.batch_size, })
-#                    print(sess.run(tf.argmax(y,-1),feed_dict={
-#                        x: batch_xs,
-#                        y: batch_y,
-#                        batch_sizes:self.batch_size,
-#                    }))
-#                    if step == 200 :
-#                        #print(batch_y)
-#                        print(sess.run(tf.argmax(pred,-1),feed_dict={
-#                        x: batch_xs,
-#                        y: batch_y,
-#                    }))
-#                        print(sess.run(tf.argmax(y,-1),feed_dict={
-#                        x: batch_xs,
-#                        y: batch_y,
-#                    }))
-#                    print(sess.run(pred[0],feed_dict={
-#                    x: batch_xs,
-#                    y: batch_y,
-#                }))
+                    print(sess.run(accuracy, feed_dict=feed_dict))
                 step += 1
             print("training is over,start testing")
             while step2 * self.batch_test_size < self.testing_iters:
                 batch_x_test, batch_y_test = data_test.next_batch(self.batch_test_size)
                 batch_x_test = np.asarray(batch_x_test[0])
-                try:
-                    batch_yt = np.asarray(self.embedding_y(batch_y_test[0]))
-                except TypeError:
-                    batch_yt = np.asarray(self.embedding_y_use(batch_y_test[0]))
+                batch_yt = np.asarray(self.embedding_y(batch_y_test[0]))
                 length = len(batch_x_test)
+                feed_dict = {
+                    x: batch_x_test,
+                    y: batch_yt,
+                    batch_sizes: length,
+                }
+                self.y_test_pred.append(sess.run(tf.argmax(pred, 1), feed_dict=feed_dict))
                 if step2 % 10 == 0:
-                    print(sess.run(accuracy, feed_dict={x: batch_x_test, y: batch_yt, batch_sizes: length, }))
-                    test_pred = sess.run(tf.argmax(pred, -1), feed_dict={x: batch_x_test, y: batch_yt,
-                                                                         batch_sizes: length, })
-                    test_pred = self.combine(test_pred)
-                    test_word = self.fuser(batch_x_test)
-                    word, tag = self.id2word[test_word], self.id2tag[test_pred]
-                    print(''.join(str(k) for k in word.values), tag.values)
-#                    print(sess.run(tf.argmax(y,-1),feed_dict={
-#                    x: batch_x_test,
-#                    y: batch_yt,
-#                    batch_sizes:len(batch_x_test[0]),
-#                }))
-#                if step2==10:
-#                    print(batch_x_test)
-#                    print(type(len(batch_x_test[0])))
-#                    print(batch_yt)
+                    print("start combine")
+                    words = self.fuser(batch_x_test)
+                    pred_tag = self.combine(sess.run(tf.argmax(pred, 1), feed_dict=feed_dict))
+                    result_tag = self.combine(sess.run(tf.argmax(y, 1), feed_dict=feed_dict))
+                    words = self.id2word[words]
+                    pred_tag = self.id2tag[pred_tag]
+                    result_tag = self.id2tag[result_tag]
+                    for index, ii in enumerate(words):
+                        print(ii, pred_tag.values[index], result_tag.values[index])
+                    print('a example finish')
                 step2 += 1
 
-    def RNN(self, X, weights, biases,batch_sizes):
+    def RNN(self, X, weights, biases, batch_sizes):
+        # 原始的 X 是 3 维数据, 我们需要把它变成 2 维数据才能使用 weights 的矩阵乘法
+        # X ==> (10 batches , 16 steps, 64 inputs)
         embedding = tf.get_variable("embedding", [self.vocab_size, self.embedding_size], dtype=tf.float32)
         X = tf.nn.embedding_lookup(embedding, X)
-    # X ==> (10 batches * 16 steps, 64 inputs)
+        # X ==> (10 batches * 16 steps, 64 inputs)
         X = tf.cast(X, tf.float32)
+        # X = tf.reshape(X,[-1,self.n_steps,self.n_inputs])
         X = tf.reshape(X, [-1, self.n_inputs])
-    # X_in = W*X + b
+        # X_in = W*X + b
         X_in = tf.matmul(X, weights['in']) + biases['in']
-    # X_in ==> (10 batches, 16 steps, 128 hidden) 换回3维
+        # X_in ==> (10 batches, 16 steps, 128 hidden) 换回3维
         X_in = tf.reshape(X_in, [-1, self.n_steps, self.n_hidden_units])
-    # 使用 basic LSTM Cell.
+        # 使用 basic LSTM Cell.
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(self.n_hidden_units, forget_bias=1.0, state_is_tuple=True)
         init_state = lstm_cell.zero_state(batch_sizes, dtype=tf.float32) # 初始化全零 state
-        outputs, final_state = tf.nn.dynamic_rnn(lstm_cell, X_in, initial_state=init_state, time_major=False)
-        outputs = tf.reshape(outputs, [-1, self.n_hidden_units])
+        bw_cell = tf.contrib.rnn.BasicLSTMCell(self.n_hidden_units, forget_bias=1.0, state_is_tuple=True)
+        bw_init_state = bw_cell.zero_state(batch_sizes, dtype=tf.float32)
+        # outputs, final_state = tf.nn.dynamic_rnn(lstm_cell, X_in, initial_state=init_state, time_major=False)
+        outputs, bi_state = \
+            tf.nn.bidirectional_dynamic_rnn(lstm_cell, bw_cell, X_in, initial_state_fw=init_state,
+                                            initial_state_bw=bw_init_state,dtype=tf.float32)
+        forward_out, backward_out = outputs
+        outputs = tf.concat([forward_out, backward_out], axis=2)
+        outputs = tf.reshape(outputs, [-1, self.n_hidden_units*2])
         results = tf.matmul(outputs, weights['out']) + biases['out']
-        results = tf.reshape(results, [-1, self.n_classes])
+        # results = tf.reshape(results, [-1,self.n_classes])
         return results
-
-    def embedding_y(self, label):
-            result = []
-            for i in label:
-                for j in i:
-                    z1 = [0]*self.n_classes
-                    z1[int(j)]=1
-                    result.append(z1)
-            return result
-
-    def embedding_y_use(self, label):
-            result = []
-            for i in label:
-                temp = [0]*self.n_classes
-                temp[int(i)] = 1
-                result.append(temp)
-            return result
-
-    def fuser(self, inputs):
-        result = []
-        for index, ii in enumerate(inputs):
-            if index == 0:
-                result += list(ii)
-            else:
-                result += list(ii)[8:]
-        while result[-1] == 0:
-            result.pop()
-        return result
 
     def combine(self, y):
         result = []
@@ -168,25 +132,44 @@ class Model(object):
             if i < 8:
                 result.append(y[i])
                 i += 1
-            elif i < len(y) - 8:
-                if y[i] == y[i + 8]:
+            elif i<len(y)-8:
+                if y[i]==y[i+8]:
                     result.append(y[i])
                     i += 1
                 else:
-                    if (y[i] * y[i + 8] == 0) and (y[i] + y[i + 8] != 0):
-                        if y[i] != 0:
+                    if (y[i]*y[i+8]==0)and(y[i]+y[i+8]!=0):
+                        if y[i]!=0:
                             result.append(y[i])
                         else:
-                            result.append(y[i + 8])
+                            result.append(y[i+8])
                         i += 1
-                    elif (y[i] * y[i + 8] != 0):
+                    elif (y[i]*y[i+8]!=0):
                         result.append(y[i])
-                        i += 1
-                if (i % 8 == 0) and (i + 8 < len(y)):
+                        i+=1
+                if (i%8==0)and(i+8<len(y)):
                     i += 8
             else:
                 result.append(y[i])
-                i += 1
+                i+=1
+        
+        return result
+    
+    def embedding_y(self,label):
+            result = []
+            for i in label:
+                for j in i:
+                    z1 = [0]*self.n_classes
+                    z1[int(j)]=1
+                    result.append(z1)
+            return result
+
+    def fuser(self, inputs):
+        result = []
+        for index, ii in enumerate(inputs):
+            if index == 0:
+                result += list(ii)
+            else:
+                result += list(ii[8:])
         while result[-1] == 0:
             result.pop()
         return result

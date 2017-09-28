@@ -70,9 +70,6 @@ class DataLoad(object):
                 ids.extend([0]*(time_steps - len(ids)))
             else:
                 ids.extend([0]*int((time_steps/2)-len(ids)%(time_steps/2)))
-            #if len(ids) >= max_len:  # 长则弃掉
-#                return ids[:max_len]
-#            ids.extend([0] * (max_len - len(ids)))  # 短则补全
             return ids
 
         def y_padding(tags):
