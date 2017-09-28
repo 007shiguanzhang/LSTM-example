@@ -181,11 +181,10 @@ class Model(object):
     def extract_non(self, words, labels):
         i = 0
         words, labels = list(words), list(labels)
-        temp, result, index_tag = [], [], []
+        temp, result, index_word = [], [], []
         while i < len(labels):
             if labels[i][0] == 'S':
-                result.append([words[i]])
-                index_tag.append([i, i])
+                result.append([words[i], i])
                 i += 1
             elif labels[i][0] == 'B':
                 k = i + 1
@@ -197,8 +196,7 @@ class Model(object):
                     else:
                         break
                 if temp == ['B'] + ['M'] * (len(temp) - 2) + ['E'] or temp == ['B', 'E']:
-                    result.append((words[i:k + 1]))
-                    index_tag.append([i, k + 1])
+                    result.append([words[i:k + 1], i, k])
                 temp = []
                 if labels[k][0] in ['B', 'S']:
                     i = k
@@ -207,33 +205,3 @@ class Model(object):
             else:
                 i += 1
         return result
-
-if __name__ == '__main__':
-        a = ['O', 'O', 'B-BOD', 'M-BOD', 'M-BOD', 'E-BOD', 'O', 'B-BOD', 'B-BOD', 'E-BOD']
-        i = 0
-        temp, result, index_tag = [], [], []
-        while i < len(a):
-            if a[i][0] == 'S':
-                result.append([a[i]])
-                index_tag.append([i, i])
-                i += 1
-            elif a[i][0] == 'B':
-                k = i + 1
-                temp += [a[i][0], a[k][0]]
-                while a[k] != 'O' and a[k][-3:] == a[i][-3:] and a[k][0] not in ['E', 'S', 'B']:
-                    k += 1
-                    if k < len(a):
-                        temp += a[k][0]
-                    else:
-                        break
-                if temp == ['B'] + ['M'] * (len(temp) - 2) + ['E'] or temp == ['B', 'E']:
-                    result.append(a[i:k + 1])
-                    index_tag.append([i, k + 1])
-                temp = []
-                if a[k][0] in ['B', 'S']:
-                    i = k
-                else:
-                    i = k + 1
-            else:
-                i += 1
-        print(result)
