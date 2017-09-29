@@ -1,6 +1,6 @@
 from data import DataLoad
 from Batch import BatchGenerator
-from model2 import Model
+from model3 import Model
 import tensorflow as tf
 import numpy as np
 

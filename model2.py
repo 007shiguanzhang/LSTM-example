@@ -1,7 +1,6 @@
 import tensorflow as tf
 import numpy as np
-
-tf.set_random_seed(1)  # set random seed
+tf.set_random_seed(1)   # set random seed
 
 # 导入数据
 np.set_printoptions(threshold=np.inf)
