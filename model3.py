@@ -19,13 +19,13 @@ class Model(object):
         self.n_steps = 24                # time steps
         self.n_hidden_units = 128        # neurons in hidden layer
         self.n_classes = class_num              # MNIST classes (0-18 digits)
-        
-        self.id2word, self.id2tag = id2      #标号解码
-        
+
+        self.id2word, self.id2tag = id2      # 标号解码
+        self.tag2label = {'BOD': '身体部位', u'BEH': '症状和体征', u'DIS': '疾病和诊断', u'CHE': '检查和检验', u'TRE': '治疗'}
     # placeholder
         x = tf.placeholder(tf.int32, [None, self.n_steps])
-        y = tf.placeholder(tf.float32, [None,self.n_classes])
-        batch_sizes = tf.placeholder(tf.int32,[]) 
+        y = tf.placeholder(tf.int32, [None, self.n_steps])
+        batch_sizes = tf.placeholder(tf.int32, [])
 
     # 对 weights biases 初始值的定义
         weights = {
@@ -41,12 +41,20 @@ class Model(object):
             'out': tf.Variable(tf.constant(0.1, shape=[self.n_classes, ]))
         }
     #获取预测结果，计算损失函数，梯度下降
-        pred = self.lstm(x, weights, biases,batch_sizes)
+        pred = self.lstm(x, weights, biases, batch_sizes)
+        output = tf.reshape(pred, [self.batch_size, -1, self.n_classes])
+        print('output的尺寸:', output.shape)
+        self.seq_length = tf.convert_to_tensor(self.batch_size * [self.n_steps], dtype=tf.int32)
+        print('seq_length:', self.seq_length)
+        self.log_likelihood, self.transition_params = \
+            tf.contrib.crf.crf_log_likelihood(output, y, self.seq_length)
+        self.loss = tf.reduce_mean(-self.log_likelihood)
+        train_op = tf.train.AdamOptimizer(self.lr).minimize(self.loss)
         cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
-        train_op = tf.train.AdamOptimizer(self.lr).minimize(cost)
+        # train_op = tf.train.AdamOptimizer(self.lr).minimize(cost)
     #按字的正确率统计
-        correct_pred = tf.equal(tf.argmax(pred, 1), tf.argmax(y, 1))
-        accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
+        # correct_pred = tf.equal(tf.argmax(pred, 1), y)
+        # accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
         print('Finished creating the lstm model.')
 
     #initial 
@@ -59,27 +67,41 @@ class Model(object):
             print("Traing")
             while step * self.batch_size < self.training_iters:
                 batch_xs, batch_ys = data_train.next_batch(self.batch_size)
-                batch_y = np.asarray(self.embedding_y(batch_ys))
-                feed_dict={
+                # batch_y = np.asarray(self.embedding_y(batch_ys))
+                batch_y = np.asarray(batch_ys)
+                feed_dict = {
                     x: batch_xs,
                     y: batch_y,
-                    batch_sizes:self.batch_size,
+                    batch_sizes: self.batch_size,
                 }
-    #启动训练
+    # 启动训练
                 sess.run([train_op], feed_dict=feed_dict)
-                #if step % 100 == 0:
-                    #print(sess.run(accuracy,feed_dict=feed_dict))
-                    #print(sess.run(tf.argmax(pred,1),feed_dict=feed_dict))
-                    #print(sess.run(tf.argmax(y,1),feed_dict=feed_dict))
+                if step % 100 == 0:
+                    fetches = [output, self.transition_params]
+                    scores, transition_params = sess.run(fetches, feed_dict)
+                    tf_unary_scores = np.squeeze(scores)
+                    acc, total = 0, 0
+                    words, tags, viterbi_sequence = [], [], []
+                    for index, ii in enumerate(tf_unary_scores):
+                        viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(
+                            ii, transition_params)
+                        resu = [indek for indek, kj in enumerate(viterbi_sequence) if kj == batch_y[index][indek]]
+                        acc += len(resu)
+                        total += len(viterbi_sequence)
+                    print('acc:', acc/total)
+                    # print(sess.run(accuracy, feed_dict=feed_dict))
+                    # print(sess.run(tf.argmax(pred,1),feed_dict=feed_dict))
+                    # print(sess.run(tf.argmax(y,1),feed_dict=feed_dict))
                 step += 1
-    #测试
+    # 测试
             print("Training is over,start testing")
-            while step2 * self.batch_test_size<self.testing_iters:
+            while step2 * self.batch_test_size < self.testing_iters:
                 batch_x_test, batch_y_test = data_test.next_batch(self.batch_test_size)
                 batch_x_test = np.asarray(batch_x_test[0])
-                batch_yt = np.asarray(self.embedding_y(batch_y_test[0]))
-                l=len(batch_x_test)
-                feed_dict={
+                # batch_yt = np.asarray(self.embedding_y(batch_y_test[0]))
+                batch_yt = np.asarray(batch_y_test[0])
+                l = len(batch_x_test)
+                feed_dict = {
                     x: batch_x_test,
                     y: batch_yt,
                     batch_sizes: l,
@@ -87,36 +109,41 @@ class Model(object):
                 if step2 == 1:
                     xx = self.combine(batch_x_test.reshape(-1))
                     word = self.id2word[xx]
-                    pred_result = self.combine(sess.run(tf.argmax(pred, 1), feed_dict=feed_dict))
-                    y_result = self.combine(sess.run(tf.argmax(y, 1), feed_dict=feed_dict))
+                    # pred_result = self.combine(sess.run(tf.argmax(pred, 1), feed_dict=feed_dict))
+                    fetches_test = [output, self.transition_params]
+                    scores, transition_params = sess.run(fetches_test, feed_dict)
+                    tf_unary_scores_t = np.squeeze(scores)
+                    result_test = []
+                    for index, ii in enumerate(tf_unary_scores_t):
+                        viterbi_sequence, _ = tf.contrib.crf.viterbi_decode(
+                            ii, transition_params)
+                        result_test += viterbi_sequence
+                    pred_result = self.combine(result_test)
+                    y_result = self.combine(batch_yt.reshape(-1))
                     pred_tag = self.id2tag[pred_result]
                     y_tag = self.id2tag[y_result]
-                    for index, ii in enumerate(word):
-                        print(ii, pred_tag.values[index], y_tag.values[index])
+                    # for index, ii in enumerate(word):
+                    #     print(ii, self.tag2label[pred_tag.values[index]], self.tag2label[y_tag.values[index]])
                     pred_result, result_irregular = self.extract_non(word.values, pred_tag.values)
                     label_result, _ = self.extract_non(word.values, y_tag.values)
+                    print("标注结果:", label_result)
                     result_error = [temp for temp in pred_result if temp not in label_result]
                     result_correct = [temp for temp in pred_result if temp in label_result]
                     print('不规则的:', result_irregular)
                     print('标记规则正确但是标记错误:', result_error)
                     print('标记正确:', result_correct)
-                    # print(sess.run(tf.argmax(pred, 1), feed_dict=feed_dict))
-                    # print(sess.run(tf.argmax(y,1),feed_dict=feed_dict))
-                    # print(len(sess.run(tf.argmax(pred,1),feed_dict=feed_dict)))
-                    # print(yy)
-                    # print(yyy)
 
                 step2 += 1
                 
-    #lstm模型，参数：输入，权重，偏置，批次大小
+    # lstm模型，参数：输入，权重，偏置，批次大小
     def lstm(self, X, weights, biases,batch_sizes):
-    # X == (10 batches , 24 steps)
-    # X ==> (10 batches * 64 inputs, 24 steps)
+        # X == (10 batches , 24 steps)
+        # X ==> (10 batches * 64 inputs, 24 steps)
         embedding = tf.get_variable("embedding", [self.vocab_size, self.embedding_size], dtype=tf.float32)
         X = tf.nn.embedding_lookup(embedding, X)
-        X = tf.cast(X,tf.float32)
-    #X ==> (10 batches * 24 steps, 64 inputs)
-        X = tf.reshape(X,[-1,self.n_inputs])
+        X = tf.cast(X, tf.float32)
+        # X ==> (10 batches * 24 steps, 64 inputs)
+        X = tf.reshape(X, [-1, self.n_inputs])
     # X_in = W*X + b
         X_in = tf.matmul(X, weights['in']) + biases['in']
     # X_in ==> (10 batches, 24 steps, 128 hidden) 换回3维
@@ -134,17 +161,17 @@ class Model(object):
         outputs = tf.concat([fw_out, bw_out], axis=2)
         outputs = tf.reshape(outputs, [-1, self.n_hidden_units*2])
         results = tf.matmul(outputs, weights['out']) + biases['out']
-        
+
         return results
     
     # 合并函数
-    def combine(self,y):
+    def combine(self, y):
         r=[]
         result=[]
         i=0
-        while i<len(y):
+        while i < len(y):
             r.append(y[i:i+24])
-            i+=24
+            i += 24
     # 计算原病例长度
         l=8*(len(r)-1)+24
     # 开始合并
@@ -216,12 +243,12 @@ class Model(object):
         return result
 
     # label 的one-hot
-    def embedding_y(self,label):
+    def embedding_y(self, label):
             result = []
             for i in label:
                 for j in i:
                     z1 = [0]*self.n_classes
-                    z1[int(j)]=1
+                    z1[int(j)] = 1
                     result.append(z1)
             return result
 
@@ -231,7 +258,7 @@ class Model(object):
         temp, result, index_correct, result_irregular = [], [], [], []
         while i < len(labels):
             if labels[i][0] == 'S':
-                result.append([words[i], labels[i], i])
+                result.append([words[i], labels[i], self.tag2label[labels[i][-3:]], i])
                 index_correct.append(i)
                 i += 1
             elif labels[i][0] == 'B':
@@ -244,7 +271,8 @@ class Model(object):
                     else:
                         break
                 if temp == ['B'] + ['M'] * (len(temp) - 2) + ['E'] or temp == ['B', 'E']:
-                    result.append([words[i:k + 1], labels[i:k+1], i, k])
+                    con = [self.tag2label[i[-3:]] for i in labels[i:k+1]]
+                    result.append([words[i:k + 1], labels[i:k+1], con, i, k])
                     index_correct.extend(list(range(i, k+1)))
                 temp = []
                 if labels[k][0] in ['B', 'S']:
